@@ -1,0 +1,123 @@
+use crate::ast::{File, Item, Span, Ident, FunctionDecl, Function, FunctionCall, Expr, Literal, Operator, Unaryop};
+use crate::tokens::Token;
+use codespan::ByteIndex;
+use lalrpop_util::ParseError;
+use void::Void;
+
+grammar<'input>;
+
+pub File: File = {
+    <l:@L> <items:Item*> <r:@R> => File::new(items, Span::new(l, r)),
+};
+
+pub Item: Item = {
+    <Extern> ";" => Item::Extern(<>),
+    <FunctionDef> ";" => Item::Function(<>),
+    <Expr> ";" => Item::Expr(<>),
+};
+
+FunctionDef: Function = {
+    <l:@L> "def" <decl:FunctionDecl> <body:Expr?> <r:@R> => Function::new(decl, body, Span::new(l, r)),
+};
+
+Extern: FunctionDecl = {
+    <l:@L> "extern" <decl:FunctionDecl> <r:@R> => FunctionDecl { span: Span::new(l, r), ..decl },
+};
+
+FunctionDecl: FunctionDecl = {
+    <l:@L> <name:Ident> "(" <args:Ident*> ")" <r:@R> => FunctionDecl::new(name, args, Span::new(l, r)),
+};
+
+pub Expr: Expr = {
+    <id: Ident> "=" <body: Expr> => Expr::Assign {ident: id, value: Box::new(body) },
+    ArithmaticExpression
+};
+
+AddOp: Operator = {
+    "+" => Operator::Add,
+    "-" => Operator::Sub,
+};
+
+MulOp: Operator = {
+    "*" => Operator::Mult,
+    "/" => Operator::Div,
+    "%" => Operator::Mod,
+};
+
+ArithmaticExpression: Expr = {
+  <l: ArithmaticExpression> <op: AddOp> <r: Term> => Expr::BinOp {
+    left: Box::new(l),
+    op,
+    right: Box::new(r),
+  },
+  Term
+}
+
+Term: Expr = {
+  <a:Term> <location:@L> <op:MulOp> <b:Factor> => Expr::BinOp {
+    left: Box::new(a),
+    op,
+    right: Box::new(b),
+  },
+  Factor,
+};
+
+Factor: Expr = {
+    <l:@L> <op:UnaryOp> <e:Factor> => Expr::UnaryOp { operand: Box::new(e), op },
+    Literal => Expr::Literal(<>),
+    Ident => Expr::Ident(<>),
+    <FunctionCall> => Expr::FunctionCall(<>),
+    "(" <e: ArithmaticExpression> ")" => e,
+};
+
+UnaryOp: Unaryop = {
+    "+" => Unaryop::UAdd,
+    "-" => Unaryop::USub,
+    "~" => Unaryop::Invert,
+};
+
+Literal: Literal = {
+    <l:@L> <lit:"literal"> <r:@R> => Literal::new(lit.as_number().unwrap(), Span::new(l, r)),
+};
+
+Ident: Ident = {
+    <l:@L> <id:"ident"> <r:@R> => Ident::new(id.as_ident().unwrap(), Span::new(l, r)),
+};
+
+FunctionCall: FunctionCall = {
+    <l:@L> <name:Ident> "(" <args:Comma<Expr>> ")" <r:@R> => FunctionCall::new(name, args, Span::new(l, r)),
+};
+
+Comma<T>: Vec<T> = {
+    <v:(<T> ",")*> <e:T?> => match e {
+        None => v,
+        Some(e) => {
+            let mut v = v;
+            v.push(e);
+            v
+        }
+    }
+};
+
+extern {
+    type Location = ByteIndex;
+    type Error = ParseError<ByteIndex, Token<'input>, Void>;
+
+    enum Token<'input> {
+        "ident" => Token::Identifier(_),
+        "literal" => Token::Number(_),
+        "extern" => Token::Extern,
+        "def" => Token::Def,
+        "(" => Token::OpenParen,
+        ")" => Token::CloseParen,
+        "," => Token::Comma,
+        ";" => Token::Semi,
+        "=" => Token::Assign,
+        "+" => Token::Add,
+        "-" => Token::Sub,
+        "*" => Token::Mul,
+        "/" => Token::Div,
+        "%" => Token::Mod,
+        "~" => Token::Invert,
+    }
+}
