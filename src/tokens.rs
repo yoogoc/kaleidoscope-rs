@@ -11,6 +11,12 @@ pub enum Token<'input> {
     Def,
     #[token("extern")]
     Extern,
+    #[token("if")]
+    If,
+    #[token("then")]
+    Then,
+    #[token("else")]
+    Else,
     #[token("(")]
     OpenParen,
     #[token(")")]

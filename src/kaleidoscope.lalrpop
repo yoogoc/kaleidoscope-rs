@@ -45,25 +45,27 @@ MulOp: Operator = {
 };
 
 ArithmaticExpression: Expr = {
-  <l: ArithmaticExpression> <op: AddOp> <r: Term> => Expr::BinOp {
+  <ls:@L> <l: ArithmaticExpression> <op: AddOp> <r: Term> <rs:@R> => Expr::BinOp {
     left: Box::new(l),
     op,
     right: Box::new(r),
+    span: Span::new(ls, rs)
   },
   Term
 }
 
 Term: Expr = {
-  <a:Term> <location:@L> <op:MulOp> <b:Factor> => Expr::BinOp {
+  <a:Term> <l:@L> <op:MulOp> <b:Factor> <r:@R> => Expr::BinOp {
     left: Box::new(a),
     op,
     right: Box::new(b),
+    span: Span::new(l, r)
   },
   Factor,
 };
 
 Factor: Expr = {
-    <l:@L> <op:UnaryOp> <e:Factor> => Expr::UnaryOp { operand: Box::new(e), op },
+    <l:@L> <op:UnaryOp> <e:Factor> <r:@R> => Expr::UnaryOp { operand: Box::new(e), op, span: Span::new(l, r) },
     Literal => Expr::Literal(<>),
     Ident => Expr::Ident(<>),
     <FunctionCall> => Expr::FunctionCall(<>),

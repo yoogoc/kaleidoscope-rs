@@ -77,16 +77,18 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 Some(_) => Ok(self.context.f64_type().const_float(1.)),
                 None => Err("assign var error"),
             },
-            Expr::BinOp { left, op, right } => {
+            Expr::BinOp {
+                left,
+                op,
+                right,
+                span: _,
+            } => {
                 let l = self.compile_expr(&left)?;
                 let r = self.compile_expr(&right)?;
                 match op {
                     Operator::Add => match self.builder.build_float_add(l, r, "tmpadd") {
                         Ok(v) => Ok(v),
-                        Err(err) => {
-                            println!("{}", err.to_string());
-                            Err("build add error")
-                        }
+                        Err(_err) => Err("build add error"),
                     },
                     Operator::Sub => match self.builder.build_float_sub(l, r, "tmpsub") {
                         Ok(v) => Ok(v),
@@ -107,7 +109,11 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     // },
                 }
             }
-            Expr::UnaryOp { operand: _, op: _ } => todo!(),
+            Expr::UnaryOp {
+                operand: _,
+                op: _,
+                span: _,
+            } => todo!(),
         }
     }
     pub fn compile_fn_decl(

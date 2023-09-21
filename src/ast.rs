@@ -87,10 +87,12 @@ pub enum Expr {
         left: Box<Expr>,
         op: Operator,
         right: Box<Expr>,
+        span: Span,
     },
     UnaryOp {
         operand: Box<Expr>,
         op: Unaryop,
+        span: Span,
     },
 }
 
