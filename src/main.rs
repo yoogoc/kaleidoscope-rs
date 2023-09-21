@@ -5,6 +5,7 @@ use crate::{
     ast::{Function, FunctionDecl, Ident, Span},
     complier::Compiler,
 };
+use std::io::Write;
 
 mod ast;
 mod complier;
@@ -15,6 +16,31 @@ mod tokens;
 extern crate lalrpop_util;
 
 lalrpop_mod!(#[allow(clippy::all)] #[allow(dead_code)] pub kaleidoscope);
+
+macro_rules! print_flush {
+    ( $( $x:expr ),* ) => {
+        print!( $($x, )* );
+
+        std::io::stdout().flush().expect("Could not flush to standard output.");
+    };
+}
+
+#[no_mangle]
+pub extern "C" fn putchard(x: f64) -> f64 {
+    print_flush!("{}", x as u8 as char);
+    x
+}
+
+#[no_mangle]
+pub extern "C" fn printd(x: f64) -> f64 {
+    println!("{}", x);
+    x
+}
+
+// Adding the functions above to a global array,
+// so Rust compiler won't remove them.
+#[used]
+static EXTERNAL_FNS: [extern "C" fn(f64) -> f64; 2] = [putchard, printd];
 
 fn main() {
     let context = Context::create();
@@ -51,8 +77,16 @@ fn main() {
     // let input = "extern cos(x);cos(1.234);";
     // let input = "def test(x) 1+2+x;";
     // let input = "def test(x) (1+2+x)*(x+(1+2));";
-    let input = "def foo(a b) a*a + 2*a*b + b*b;foo(1, 2);";
+    // let input = "def foo(a b) a*a + 2*a*b + b*b;foo(1, 2);";
     // eq = (a+b)*(a+b)
+    // let input = "if 1>1 then 2 else 5 end;";
+    let input = "
+        extern putchard(char);
+    def printstar(n)
+      for i = 1, i < n, 1.0 in
+        putchard(42);
+      end;
+    printstar(100);";
 
     let lexer = Lexer::new(input);
 

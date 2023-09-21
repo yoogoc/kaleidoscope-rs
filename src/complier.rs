@@ -6,6 +6,7 @@ use inkwell::types::BasicMetadataTypeEnum;
 use inkwell::values::{
     BasicMetadataValueEnum, BasicValue, FloatValue, FunctionValue, PointerValue,
 };
+use inkwell::FloatPredicate;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -36,6 +37,17 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     }
 }
 impl<'a, 'ctx> Compiler<'a, 'ctx> {
+    fn create_entry_block_alloca(&self, name: &str) -> PointerValue<'ctx> {
+        let builder = self.context.create_builder();
+        let entry = self.builder.get_insert_block().unwrap();
+
+        match entry.get_first_instruction() {
+            Some(first_instr) => builder.position_before(&first_instr),
+            None => builder.position_at_end(entry),
+        }
+
+        builder.build_alloca(self.context.f64_type(), name).unwrap()
+    }
     pub fn compile_expr(&self, expr: &Expr) -> Result<FloatValue<'ctx>, &'static str> {
         match expr {
             Expr::Ident(id) => match self.variables.borrow().get(&id.name) {
@@ -103,10 +115,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         Err(_err) => Err("build div error"),
                     },
                     Operator::Mod => todo!(),
-                    // Operator::Mod => match self.builder.build_float_add(l, r, "tmpadd") {
-                    //     Ok(v) => Ok(v),
-                    //     Err(_err) => Err("build error"),
-                    // },
+                    _ => unreachable!(),
                 }
             }
             Expr::UnaryOp {
@@ -114,6 +123,170 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 op: _,
                 span: _,
             } => todo!(),
+            Expr::BoolOp {
+                left,
+                op,
+                right,
+                span: _,
+            } => {
+                let l = self.compile_expr(&left)?;
+                let r = self.compile_expr(&right)?;
+                let op = match op {
+                    Operator::More => FloatPredicate::OGT,
+                    Operator::Less => FloatPredicate::OLT,
+                    Operator::MoreEq => FloatPredicate::OGE,
+                    Operator::LessEq => FloatPredicate::OLE,
+                    Operator::Equal => FloatPredicate::OEQ,
+                    _ => unreachable!(),
+                };
+                let cmp = self
+                    .builder
+                    .build_float_compare(op, l, r, "tmpcmp")
+                    .map_err(|_err| "build_float_compare")?;
+                Ok(self
+                    .builder
+                    .build_signed_int_to_float(cmp, self.context.f64_type(), "tmpbool")
+                    .map_err(|_err| "build_signed_int_to_float")?)
+            }
+            Expr::If {
+                cond,
+                truth,
+                falsity,
+                span: _,
+            } => {
+                let cond = self.compile_expr(cond)?;
+                let condv = self
+                    .builder
+                    .build_float_compare(
+                        FloatPredicate::ONE,
+                        cond,
+                        self.context.f64_type().const_float(0.),
+                        "ifcond",
+                    )
+                    .map_err(|_err| "ifcond")?;
+                let tf = self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_parent()
+                    .unwrap();
+                let then_bb = self.context.append_basic_block(tf, "then");
+                let else_bb = self.context.append_basic_block(tf, "else");
+                let cont_bb = self.context.append_basic_block(tf, "ifcont");
+
+                self.builder
+                    .build_conditional_branch(condv, then_bb, else_bb)
+                    .map_err(|_err| "build_conditional_branch")?;
+
+                self.builder.position_at_end(then_bb);
+                let then_val = self.compile_expr(&truth)?;
+                self.builder.build_unconditional_branch(cont_bb).unwrap();
+
+                let then_bb = self.builder.get_insert_block().unwrap();
+
+                // build else block
+                self.builder.position_at_end(else_bb);
+                let else_val = match falsity.as_ref() {
+                    Some(f) => self.compile_expr(f)?,
+                    None => self.context.f64_type().const_float(0.),
+                };
+                self.builder.build_unconditional_branch(cont_bb).unwrap();
+
+                let else_bb = self.builder.get_insert_block().unwrap();
+
+                // emit merge block
+                self.builder.position_at_end(cont_bb);
+
+                let phi = self
+                    .builder
+                    .build_phi(self.context.f64_type(), "iftmp")
+                    .unwrap();
+
+                phi.add_incoming(&[(&then_val, then_bb), (&else_val, else_bb)]);
+
+                Ok(phi.as_basic_value().into_float_value())
+            }
+            Expr::For {
+                assign,
+                cond,
+                step,
+                body,
+                span: _,
+            } => {
+                let (id, value) = if let Expr::Assign { ident, value } = assign.as_ref() {
+                    (ident, value)
+                } else {
+                    unreachable!()
+                };
+                let tf = self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_parent()
+                    .unwrap();
+                let var_name = &id.name;
+                let start_alloca = self.create_entry_block_alloca(var_name);
+                let start = self.compile_expr(value)?;
+
+                self.builder.build_store(start_alloca, start).unwrap();
+
+                let loop_bb = self.context.append_basic_block(tf, "loop");
+
+                self.builder.build_unconditional_branch(loop_bb).unwrap();
+                self.builder.position_at_end(loop_bb);
+
+                let old_val = self.variables.borrow_mut().remove(var_name.as_str());
+
+                self.variables
+                    .borrow_mut()
+                    .insert(var_name.to_owned(), start_alloca);
+
+                for ele in body {
+                    self.compile_expr(ele)?;
+                }
+
+                let step = match step.as_ref() {
+                    Some(step) => self.compile_expr(step)?,
+                    None => self.context.f64_type().const_float(1.0),
+                };
+
+                let end_cond = self.compile_expr(cond)?;
+
+                let curr_var = self
+                    .builder
+                    .build_load(self.context.f64_type(), start_alloca, var_name)
+                    .unwrap();
+                let next_var = self
+                    .builder
+                    .build_float_add(curr_var.into_float_value(), step, "nextvar")
+                    .unwrap();
+
+                self.builder.build_store(start_alloca, next_var).unwrap();
+
+                let end_cond = self
+                    .builder
+                    .build_float_compare(
+                        FloatPredicate::ONE,
+                        end_cond,
+                        self.context.f64_type().const_float(0.0),
+                        "loopcond",
+                    )
+                    .unwrap();
+                let after_bb = self.context.append_basic_block(tf, "afterloop");
+
+                self.builder
+                    .build_conditional_branch(end_cond, loop_bb, after_bb)
+                    .unwrap();
+                self.builder.position_at_end(after_bb);
+
+                self.variables.borrow_mut().remove(var_name);
+
+                if let Some(val) = old_val {
+                    self.variables.borrow_mut().insert(var_name.to_owned(), val);
+                }
+
+                Ok(self.context.f64_type().const_float(0.0))
+            }
         }
     }
     pub fn compile_fn_decl(

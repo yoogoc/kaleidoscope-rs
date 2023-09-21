@@ -29,8 +29,54 @@ FunctionDecl: FunctionDecl = {
 };
 
 pub Expr: Expr = {
-    <id: Ident> "=" <body: Expr> => Expr::Assign {ident: id, value: Box::new(body) },
-    ArithmaticExpression
+    Assign,
+    ArithmaticExpression,
+    IfExpression,
+    ForExpression,
+};
+
+Assign: Expr = {
+  <id: Ident> "=" <body: Expr> => Expr::Assign {ident: id, value: Box::new(body) }
+}
+
+IfExpression: Expr = {
+  <l:@L> "if" <cond: BoolExpression> "then" <truth: Expr> <falsity: ElseExpression?> "end" <r:@R> => Expr::If {
+      cond: Box::new(cond),
+      truth: Box::new(truth),
+      falsity: Box::new(falsity),
+      span: Span::new(l, r)
+  }
+}
+
+ForExpression: Expr = {
+  <l:@L> "for" <a: Assign> "," <cond: BoolExpression> "," <step: ArithmaticExpression?> "in" <body: Semi<Expr>> "end" <r:@R> => Expr::For {
+      assign: Box::new(a),
+      cond: Box::new(cond),
+      step: Box::new(step),
+      body: body,
+      span: Span::new(l, r)
+  }
+}
+
+ElseExpression: Expr = {
+  "else" <falsity: Expr> => falsity
+}
+
+BoolExpression: Expr = {
+  <ls:@L> <l: ArithmaticExpression> <op: BoolOp> <r: ArithmaticExpression> <rs:@R> => Expr::BoolOp {
+    left: Box::new(l),
+    op,
+    right: Box::new(r),
+    span: Span::new(ls, rs)
+  }
+}
+
+BoolOp: Operator = {
+    ">" => Operator::More,
+    "<" => Operator::Less,
+    ">=" => Operator::MoreEq,
+    "<=" => Operator::LessEq,
+    "==" => Operator::Equal,
 };
 
 AddOp: Operator = {
@@ -101,6 +147,17 @@ Comma<T>: Vec<T> = {
     }
 };
 
+Semi<T>: Vec<T> = {
+    <v:(<T> ";")*> <e:T?> => match e {
+        None => v,
+        Some(e) => {
+            let mut v = v;
+            v.push(e);
+            v
+        }
+    }
+};
+
 extern {
     type Location = ByteIndex;
     type Error = ParseError<ByteIndex, Token<'input>, Void>;
@@ -110,6 +167,12 @@ extern {
         "literal" => Token::Number(_),
         "extern" => Token::Extern,
         "def" => Token::Def,
+        "if" => Token::If,
+        "then" => Token::Then,
+        "else" => Token::Else,
+        "for" => Token::For,
+        "in" => Token::In,
+        "end" => Token::End,
         "(" => Token::OpenParen,
         ")" => Token::CloseParen,
         "," => Token::Comma,
@@ -121,5 +184,10 @@ extern {
         "/" => Token::Div,
         "%" => Token::Mod,
         "~" => Token::Invert,
+        ">" => Token::More,
+        "<" => Token::Less,
+        ">=" => Token::MoreEq,
+        "<=" => Token::LessEq,
+        "==" => Token::Equal,
     }
 }

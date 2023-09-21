@@ -17,6 +17,12 @@ pub enum Token<'input> {
     Then,
     #[token("else")]
     Else,
+    #[token("for")]
+    For,
+    #[token("in")]
+    In,
+    #[token("end")]
+    End,
     #[token("(")]
     OpenParen,
     #[token(")")]
@@ -39,6 +45,16 @@ pub enum Token<'input> {
     Mod,
     #[token("~")]
     Invert,
+    #[token(">")]
+    More,
+    #[token("<")]
+    Less,
+    #[token(">=")]
+    MoreEq,
+    #[token("<=")]
+    LessEq,
+    #[token("==")]
+    Equal,
 }
 
 impl<'input> Token<'input> {

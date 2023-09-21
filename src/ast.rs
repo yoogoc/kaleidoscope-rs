@@ -33,6 +33,11 @@ pub enum Operator {
     Mult,
     Div,
     Mod,
+    More,
+    Less,
+    MoreEq,
+    LessEq,
+    Equal,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -89,9 +94,28 @@ pub enum Expr {
         right: Box<Expr>,
         span: Span,
     },
+    BoolOp {
+        left: Box<Expr>,
+        op: Operator,
+        right: Box<Expr>,
+        span: Span,
+    },
     UnaryOp {
         operand: Box<Expr>,
         op: Unaryop,
+        span: Span,
+    },
+    If {
+        cond: Box<Expr>,
+        truth: Box<Expr>,
+        falsity: Box<Option<Expr>>,
+        span: Span,
+    },
+    For {
+        assign: Box<Expr>,
+        cond: Box<Expr>,
+        step: Box<Option<Expr>>,
+        body: Vec<Expr>,
         span: Span,
     },
 }
