@@ -1,0 +1,11 @@
+{
+  "files.associations": {
+    "*.json": "jsonc",
+    "*.nvue": "vue",
+    "*.wpy": "vue",
+    "*.vue": "vue",
+    "*.wxss": "css",
+    "*.wxs": "javascript",
+    "stdio.h": "c"
+  }
+}

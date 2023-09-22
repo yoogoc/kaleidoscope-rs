@@ -1,12 +1,17 @@
 use ast::File;
-use inkwell::{context::Context, passes::PassManager, OptimizationLevel};
+use inkwell::{
+    context::Context,
+    passes::PassManager,
+    targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine},
+    OptimizationLevel,
+};
 use lexer::Lexer;
 
 use crate::{
     ast::{Function, FunctionDecl, Ident, Span},
     complier::Compiler,
 };
-use std::io::Write;
+use std::{io::Write, path::Path};
 
 mod ast;
 mod complier;
@@ -68,17 +73,17 @@ fn main() {
     // let input = "def foo(a b) a*a + 2*a*b + b*b;def bar(a) foo(a, 4.0) + bar(31337);";
     // let input = "extern cos(x);cos(1.234);";
     // let input = "def test(x) 1+2+x;";
-    // let input = "def test(x) (1+2+x)*(x+(1+2));";
+    let input = "def test(x) (1+2+x)*(x+(1+2));";
     // let input = "def foo(a b) a*a + 2*a*b + b*b;foo(1, 2);";
     // eq = (a+b)*(a+b)
     // let input = "if 1>1 then 2 else 5 end;";
-    let input = "
-        extern putchard(char);
-    def printstar(n)
-      for i = 1, i < n, 1.0 in
-        putchard(42);
-      end;
-    printstar(100);";
+    // let input = "
+    //     extern putchard(char);
+    // def printstar(n)
+    //   for i = 1, i < n, 1.0 in
+    //     putchard(42);
+    //   end;
+    // printstar(100);";
 
     let lexer = Lexer::new(input);
 
@@ -101,6 +106,37 @@ fn main() {
     result.print_to_string(&complier);
     println!("---------llvm call---------");
     run_target(&result, &complier);
+    gen_target(&complier);
+}
+
+fn gen_target(complier: &Compiler) {
+    let config = InitializationConfig {
+        asm_parser: true,
+        asm_printer: true,
+        base: true,
+        disassembler: false,
+        info: true,
+        machine_code: true,
+    };
+    Target::initialize_all(&config);
+    let target_triple = TargetMachine::get_default_triple();
+    let target = Target::from_triple(&target_triple).unwrap();
+    let tm = target
+        .create_target_machine(
+            &target_triple,
+            "generic",
+            "",
+            OptimizationLevel::Default,
+            RelocMode::Default,
+            CodeModel::Default,
+        )
+        .unwrap();
+    let dl = tm.get_target_data().get_data_layout();
+    complier.module.set_data_layout(&dl);
+    complier.module.set_triple(&target_triple);
+    let path = Path::new("kaleidoscope.o");
+    tm.write_to_file(&complier.module, FileType::Object, &path)
+        .unwrap();
 }
 
 fn run_target(result: &File, complier: &Compiler) {
