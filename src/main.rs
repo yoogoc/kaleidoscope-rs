@@ -1,3 +1,4 @@
+use ast::File;
 use inkwell::{context::Context, passes::PassManager, OptimizationLevel};
 use lexer::Lexer;
 
@@ -45,15 +46,6 @@ static EXTERNAL_FNS: [extern "C" fn(f64) -> f64; 2] = [putchard, printd];
 fn main() {
     let context = Context::create();
     let module = context.create_module("repl");
-
-    let execution_engine = module
-        .create_jit_execution_engine(OptimizationLevel::None)
-        .unwrap();
-    // module.create_interpreter_execution_engine();
-    // let target_data = execution_engine.get_target_data();
-    // let data_layout = target_data.get_data_layout();
-    // module.set_data_layout(&data_layout);
-
     let builder = context.create_builder();
 
     // Create FPM
@@ -108,6 +100,14 @@ fn main() {
     println!("---------llvm print---------");
     result.print_to_string(&complier);
     println!("---------llvm call---------");
+    run_target(&result, &complier);
+}
+
+fn run_target(result: &File, complier: &Compiler) {
+    let execution_engine = complier
+        .module
+        .create_jit_execution_engine(OptimizationLevel::None)
+        .unwrap();
     for item in result.items.clone() {
         match item {
             ast::Item::Extern(e) => {
